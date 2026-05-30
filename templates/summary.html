@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>WH Arrests — Summary</h1>
+
+<div style="display:flex; gap:1.5rem; margin-bottom:2rem; flex-wrap:wrap;">
+  <div style="background:#fff; border-radius:8px; padding:1.5rem 2rem; min-width:160px; box-shadow:0 1px 4px rgba(0,0,0,.1);">
+    <div style="font-size:2.2rem; font-weight:700;">{{ scrape_count }}</div>
+    <div style="color:#666; margin-top:.25rem;">Scrapes run</div>
+  </div>
+  <div style="background:#fff; border-radius:8px; padding:1.5rem 2rem; min-width:160px; box-shadow:0 1px 4px rgba(0,0,0,.1);">
+    <div style="font-size:2.2rem; font-weight:700;">{{ city_count }}</div>
+    <div style="color:#666; margin-top:.25rem;">Unique cities</div>
+  </div>
+  <div style="background:#fff; border-radius:8px; padding:1.5rem 2rem; min-width:160px; box-shadow:0 1px 4px rgba(0,0,0,.1);">
+    <div style="font-size:2.2rem; font-weight:700;">{{ country_count }}</div>
+    <div style="color:#666; margin-top:.25rem;">Origin countries</div>
+  </div>
+</div>
+
+<div style="display:flex; gap:1rem; margin-bottom:2.5rem;">
+  <form method="post" action="/run-scrape">
+    <button type="submit" class="btn btn-primary">Run scrape</button>
+  </form>
+  <a href="/arrests" class="btn btn-secondary">View all arrests</a>
+</div>
+
+<hr style="border:none; border-top:1px solid #ddd; margin-bottom:2rem;">
+
+{% if prev_date %}
+  <h2 style="font-size:1.2rem; margin-bottom:1.5rem;">
+    Changes &mdash; <span style="font-weight:400; color:#666;">{{ prev_date }} → {{ latest_date }}</span>
+  </h2>
+
+  <style>
+    .diff-table { border-collapse:collapse; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.1); margin-bottom:2rem; }
+    .diff-table th { background:#1a1a2e; color:#fff; padding:.6rem 1rem; text-align:left; white-space:nowrap; }
+    .diff-table td { padding:.55rem 1rem; border-top:1px solid #eee; }
+    .diff-table td.num { text-align:right; }
+    .pos { color:#1a7a3c; font-weight:600; }
+    .neg { color:#b91c1c; font-weight:600; }
+    .empty-note { color:#888; font-style:italic; margin-bottom:2rem; }
+    .diff-section-title { font-size:1rem; font-weight:600; margin-bottom:.75rem; }
+  </style>
+
+  {# --- Arrest count changes --- #}
+  <div class="diff-section-title">Arrest count changes ({{ changed|length }})</div>
+  {% if changed %}
+    <table class="diff-table">
+      <thead><tr>
+        <th>City</th><th>State</th>
+        <th>Previous</th><th>New</th><th>Δ</th>
+      </tr></thead>
+      <tbody>
+        {% for r in changed %}
+        <tr>
+          <td>{{ r["city"] }}</td>
+          <td>{{ r["state"] }}</td>
+          <td class="num">{{ r["prev_arrests"] }}</td>
+          <td class="num">{{ r["new_arrests"] }}</td>
+          <td class="num {% if r['diff'] > 0 %}pos{% else %}neg{% endif %}">
+            {{ "+" if r["diff"] > 0 else "" }}{{ r["diff"] }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty-note">No changes</p>
+  {% endif %}
+
+  {# --- New cities --- #}
+  <div class="diff-section-title">New cities ({{ added|length }})</div>
+  {% if added %}
+    <table class="diff-table">
+      <thead><tr><th>City</th><th>State</th><th>Arrests</th></tr></thead>
+      <tbody>
+        {% for r in added %}
+        <tr>
+          <td>{{ r["city"] }}</td>
+          <td>{{ r["state"] }}</td>
+          <td class="num">{{ r["arrests"] }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty-note">No new cities</p>
+  {% endif %}
+
+  {# --- Removed cities --- #}
+  <div class="diff-section-title">Removed cities ({{ removed|length }})</div>
+  {% if removed %}
+    <table class="diff-table">
+      <thead><tr><th>City</th><th>State</th><th>Last arrests</th></tr></thead>
+      <tbody>
+        {% for r in removed %}
+        <tr>
+          <td>{{ r["city"] }}</td>
+          <td>{{ r["state"] }}</td>
+          <td class="num">{{ r["arrests"] }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty-note">No removed cities</p>
+  {% endif %}
+
+{% else %}
+  <p style="color:#888; font-style:italic;">Need at least 2 scrapes to show a diff.</p>
+{% endif %}
+
+{% endblock %}

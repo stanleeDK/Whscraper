@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WH Arrests</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f5f5; color: #222; }
+    nav { background: #1a1a2e; padding: 1rem 2rem; display: flex; gap: 1.5rem; align-items: center; }
+    nav a { color: #e0e0e0; text-decoration: none; font-weight: 500; }
+    nav a:hover { color: #fff; }
+    main { padding: 2rem; max-width: 1200px; margin: 0 auto; }
+    h1 { margin-bottom: 1.5rem; font-size: 1.6rem; }
+    .btn {
+      display: inline-block; padding: 0.6rem 1.2rem; border-radius: 6px;
+      border: none; cursor: pointer; font-size: 0.95rem; font-weight: 500;
+      text-decoration: none;
+    }
+    .btn-primary { background: #1a1a2e; color: #fff; }
+    .btn-primary:hover { background: #2e2e5e; }
+    .btn-secondary { background: #e0e0e0; color: #222; }
+    .btn-secondary:hover { background: #ccc; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/">Summary</a>
+    <a href="/arrests">All Arrests</a>
+  </nav>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

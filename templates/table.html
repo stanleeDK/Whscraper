@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% macro sort_header(label, col, numeric=false) %}
+  {% if sort == col %}
+    {% if direction == 'asc' %}
+      {% set next_dir = 'desc' %}
+      {% set icon = '↑' %}
+    {% else %}
+      {% set next_dir = None %}
+      {% set icon = '↓' %}
+    {% endif %}
+  {% else %}
+    {% set next_dir = 'asc' %}
+    {% set icon = '⇅' %}
+  {% endif %}
+  {% set base = '/arrests?date=' ~ selected_date %}
+  {% if next_dir %}
+    <th style="{% if numeric %}text-align:right;{% endif %}">
+      <a href="{{ base }}&sort={{ col }}&dir={{ next_dir }}" style="color:inherit;text-decoration:none;white-space:nowrap;">
+        {{ label }} {{ icon }}
+      </a>
+    </th>
+  {% else %}
+    <th style="{% if numeric %}text-align:right;{% endif %}">
+      <a href="{{ base }}" style="color:inherit;text-decoration:none;white-space:nowrap;">
+        {{ label }} {{ icon }}
+      </a>
+    </th>
+  {% endif %}
+{% endmacro %}
+
+<h1>All Arrests <span style="font-size:1rem; font-weight:400; color:#666;">({{ rows|length }} rows)</span></h1>
+
+<style>
+  .arrests-wrap { overflow-x: auto; margin-top: 1rem; }
+  .arrests-table {
+    width: 133%;
+    border-collapse: collapse;
+    background: #fff;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,.1);
+  }
+  .arrests-table thead tr { background: #1a1a2e; color: #fff; text-align: left; }
+  .arrests-table th { padding: .75rem 1rem; white-space: nowrap; }
+  .arrests-table th a:hover { opacity: .8; }
+  .arrests-table td { padding: .6rem 1rem; border-top: 1px solid #eee; }
+  .arrests-table td.trunc {
+    max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .arrests-table td.num { text-align: right; }
+  .arrests-table td.center { text-align: center; }
+  .arrests-table tbody tr:hover { background: #f9f9f9; }
+</style>
+
+<form method="get" action="/arrests" style="margin-bottom:1rem;">
+  <label for="date-select" style="font-weight:500; margin-right:.5rem;">Scrape date:</label>
+  <select id="date-select" name="date" onchange="this.form.submit()" style="padding:.4rem .6rem; border-radius:4px; border:1px solid #ccc; font-size:.95rem;">
+    {% for d in all_dates %}
+      <option value="{{ d }}" {% if d == selected_date %}selected{% endif %}>{{ d }}</option>
+    {% endfor %}
+  </select>
+</form>
+
+<div class="arrests-wrap">
+  <table class="arrests-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        {{ sort_header("Period start",     "data_period_start") }}
+        {{ sort_header("Period end",       "data_period_end") }}
+        {{ sort_header("City",             "city") }}
+        {{ sort_header("State",            "state") }}
+        {{ sort_header("Arrests",          "arrests",          numeric=true) }}
+        {{ sort_header("Charges",          "charges") }}
+        {{ sort_header("Origin countries", "origin_countries") }}
+        {{ sort_header("Gang",             "gang_affiliation", numeric=true) }}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td class="num">{{ loop.index }}</td>
+        <td style="white-space:nowrap;">{{ row["data_period_start"] }}</td>
+        <td style="white-space:nowrap;">{{ row["data_period_end"] }}</td>
+        <td>{{ row["city"] }}</td>
+        <td>{{ row["state"] }}</td>
+        <td class="num">{{ row["arrests"] }}</td>
+        <td class="trunc" title="{{ row['charges'] }}">{{ row["charges"] }}</td>
+        <td class="trunc" title="{{ row['origin_countries'] }}">{{ row["origin_countries"] }}</td>
+        <td class="center">{{ "✅" if row["gang_affiliation"] else "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

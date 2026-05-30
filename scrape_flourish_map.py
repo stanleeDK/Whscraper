@@ -1,26 +1,11 @@
-"""
-Extracts the underlying data from the White House Flourish geo-embed map.
-
-Run this from your OWN machine — the whitehouse.gov server IP-allowlists requests.
-
-Two modes:
-  python scrape_flourish_map.py          # requests-based (fast, may need cookies)
-  python scrape_flourish_map.py --browser  # Playwright headless browser (most reliable)
-
-Install deps:
-  pip install requests beautifulsoup4 playwright
-  playwright install chromium
-"""
-
-import argparse
 import json
 import re
+import sqlite3
 import sys
+from datetime import datetime
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
 
 import requests
-from bs4 import BeautifulSoup
 
 BASE_URL = (
     "https://www.whitehouse.gov/wp-content/themes/whitehouse/"
@@ -39,248 +24,81 @@ HEADERS = {
     "Referer": "https://www.whitehouse.gov/",
 }
 
-# Well-known Flourish static data-file paths to probe
-CANDIDATE_PATHS = [
-    "data.csv", "data.json",
-    "points.csv", "points.json",
-    "regions.csv", "regions.json",
-    "binding.json", "state.json",
-    "template.yml",
-]
 
-OUTPUT_DIR = Path("flourish_data")
-
-
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
-def save(name: str, content: bytes, suffix: str, out: Path) -> Path:
-    out.mkdir(parents=True, exist_ok=True)
-    path = out / f"{name}{suffix}"
-    path.write_bytes(content)
-    print(f"  Saved → {path}")
-    return path
-
-
-def extract_inline_data(html: str) -> dict:
-    """Pull Flourish data objects embedded directly in the page HTML/JS."""
-    found = {}
-    patterns = [
-        r"window\._?[Ff]lourish(?:_data|\.data)\s*=\s*(\{.*?\});",
-        r"var\s+flourishData\s*=\s*(\{.*?\});",
-        r'"data"\s*:\s*(\[.*?\])',
-    ]
-    for pat in patterns:
-        for m in re.finditer(pat, html, re.DOTALL):
-            try:
-                found[f"inline_{pat[:20]}"] = json.loads(m.group(1))
-                print(f"  Found inline data block: {pat[:50]}")
-            except json.JSONDecodeError:
-                pass
-
-    # GeoJSON / row-data assigned to any variable
-    for m in re.finditer(r'(\w+)\s*=\s*(\{[^;]{200,}\})\s*;', html, re.DOTALL):
-        snippet = m.group(2)
-        if any(k in snippet for k in ('"features"', '"coordinates"', '"points"', '"rows"')):
-            try:
-                obj = json.loads(snippet)
-                found[m.group(1)] = obj
-                print(f"  Found geo-like inline object: {m.group(1)}")
-            except json.JSONDecodeError:
-                pass
-
-    return found
-
-
-def discover_data_urls(html: str, base: str) -> list[str]:
-    urls: list[str] = []
-    soup = BeautifulSoup(html, "html.parser")
-
-    for attr in ("src", "href", "data-src", "data-url"):
-        for tag in soup.find_all(attrs={attr: True}):
-            val = tag[attr]
-            if any(val.endswith(ext) for ext in (".json", ".csv", ".geojson", ".tsv")):
-                urls.append(urljoin(base, val))
-
-    for m in re.finditer(r'["\']([^"\']+\.(?:json|csv|geojson|tsv))["\']', html):
-        candidate = m.group(1)
-        urls.append(candidate if candidate.startswith("http") else urljoin(base, candidate))
-
-    return list(dict.fromkeys(urls))
-
-
-# ---------------------------------------------------------------------------
-# Mode 1: requests-based
-# ---------------------------------------------------------------------------
-
-def fetch(url: str, session: requests.Session) -> requests.Response | None:
-    try:
-        resp = session.get(url, headers=HEADERS, timeout=30)
-        resp.raise_for_status()
-        return resp
-    except requests.HTTPError as e:
-        print(f"  HTTP {e.response.status_code} — {url}")
-    except requests.RequestException as e:
-        print(f"  Error — {url}: {e}")
-    return None
+def init_db(conn):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS wh_arrests (
+            created_at DATE,
+            data_period_start TEXT,
+            data_period_end TEXT,
+            city TEXT,
+            state TEXT,
+            arrests INTEGER,
+            charges TEXT,
+            origin_countries TEXT,
+            gang_affiliation INTEGER
+        )
+    """)
+    conn.commit()
 
 
 def run_requests():
-    session = requests.Session()
-    out = OUTPUT_DIR / "requests"
-
+    out = Path("flourish_data") 
     print(f"Fetching: {INDEX_URL}")
-    resp = fetch(INDEX_URL, session)
-    if resp is None:
-        print(
-            "\nFailed. The server may be IP-restricted.\n"
-            "Try --browser mode or run from a browser-based machine."
-        )
+
+    try:
+        resp = requests.get(INDEX_URL, headers=HEADERS, timeout=30)
+        resp.raise_for_status()
+    except requests.HTTPError as e:
+        print(f"  HTTP {e.response.status_code} — {INDEX_URL}")
+        sys.exit(1)
+    except requests.RequestException as e:
+        print(f"\nFailed — {e}\nThe server may be IP-restricted.")
         sys.exit(1)
 
     html = resp.text
-    (out / "index.html").parent.mkdir(parents=True, exist_ok=True)
-    (out / "index.html").write_text(html, encoding="utf-8")
-    print(f"  index.html saved ({len(html):,} chars)")
 
-    print("\nScanning for inline data...")
-    inline = extract_inline_data(html)
-    for key, data in inline.items():
-        p = out / f"inline_{key[:40].replace('/', '_')}.json"
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        print(f"  Saved → {p}")
+    payload = re.search(r'_Flourish_data\s*=\s*(\{.*\})', html)
+    if payload:
+        data = json.loads(payload.group(1)) # only retrun the valid json, not the javacript variable holding it
+        today = datetime.now().date()
+        out.mkdir(parents=True, exist_ok=True)
+        out_file = out / f"{today}_flourish_data.json"
+        out_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        print(f"  Saved → {out_file}")
 
-    print("\nDiscovering + fetching data files...")
-    data_urls = discover_data_urls(html, BASE_URL)
-    data_urls += [BASE_URL + c for c in CANDIDATE_PATHS]
-    data_urls = [u for u in dict.fromkeys(data_urls)
-                 if any(u.endswith(e) for e in (".json", ".csv", ".geojson", ".tsv"))]
+        events = data["events"]
+        print(f"  {len(events)} events found")
 
-    found = 0
-    for url in data_urls:
-        print(f"  GET {url}")
-        r = fetch(url, session)
-        if r is None:
-            continue
-        found += 1
-        name = Path(urlparse(url).path).stem
-        suffix = Path(urlparse(url).path).suffix or ".bin"
-        save(name, r.content, suffix, out)
-        if suffix == ".csv":
-            lines = r.text.splitlines()
-            print(f"    {len(lines)} rows  |  header: {lines[0][:100]}")
-        elif suffix == ".json":
-            try:
-                obj = r.json()
-                print(f"    JSON keys: {list(obj.keys())[:8] if isinstance(obj, dict) else f'array[{len(obj)}]'}")
-            except Exception:
-                pass
+        rows = []
+        for event in events:
+            metadata = event["metadata"]
+            start_str, end_str = metadata[1].split(" - ")
+            start_date = datetime.strptime(start_str, "%m/%d/%y").date()
+            end_date = datetime.strptime(end_str, "%m/%d/%y").date()
+            city, state = event["name"].split(", ", 1)
+            rows.append((
+                str(today),
+                str(start_date),
+                str(end_date),
+                city,
+                state,
+                metadata[0],
+                metadata[2],
+                metadata[3],
+                bool(metadata[4]),
+            ))
 
-    if found == 0 and not inline:
-        print("\nNo data files found via static requests.")
-        print("Run again with --browser to capture dynamic network traffic.")
-
-    print(f"\nOutput: {out.resolve()}/")
-
-
-# ---------------------------------------------------------------------------
-# Mode 2: Playwright headless browser (intercepts all network requests)
-# ---------------------------------------------------------------------------
-
-def run_browser():
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        print("Playwright not installed. Run:")
-        print("  pip install playwright && playwright install chromium")
+        db_path = out / "wh_arrests.db"
+        with sqlite3.connect(db_path) as conn:
+            init_db(conn)
+            conn.executemany("INSERT INTO wh_arrests VALUES (?,?,?,?,?,?,?,?,?)", rows)
+            conn.commit()
+        print(f"  Inserted {len(rows)} rows → {db_path}")
+    else:
+        print("  _Flourish_data not found in HTML")
         sys.exit(1)
 
-    out = OUTPUT_DIR / "browser"
-    out.mkdir(parents=True, exist_ok=True)
-    captured: dict[str, bytes] = {}
-
-    def handle_response(response):
-        url = response.url
-        if any(url.endswith(ext) for ext in (".json", ".csv", ".geojson", ".tsv", ".js")):
-            try:
-                body = response.body()
-                captured[url] = body
-                print(f"  Captured: {url}  ({len(body):,} bytes)")
-            except Exception:
-                pass
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(
-            extra_http_headers={"Referer": "https://www.whitehouse.gov/"},
-            user_agent=HEADERS["User-Agent"],
-        )
-        page = context.new_page()
-        page.on("response", handle_response)
-
-        print(f"Loading: {INDEX_URL}")
-        page.goto(INDEX_URL, wait_until="networkidle", timeout=60_000)
-
-        # Save the final rendered HTML
-        html = page.content()
-        (out / "index.html").write_text(html, encoding="utf-8")
-        print(f"  Rendered HTML saved ({len(html):,} chars)")
-
-        # Give extra time for lazy-loaded data
-        page.wait_for_timeout(3000)
-        browser.close()
-
-    print(f"\nProcessing {len(captured)} captured network responses...")
-    data_files = {
-        url: body for url, body in captured.items()
-        if any(url.endswith(e) for e in (".json", ".csv", ".geojson", ".tsv"))
-    }
-
-    if not data_files:
-        # Scan JS files for embedded data
-        for url, body in captured.items():
-            if url.endswith(".js"):
-                text = body.decode("utf-8", errors="replace")
-                inline = extract_inline_data(text)
-                for key, data in inline.items():
-                    p_path = out / f"from_js_{key[:40]}.json"
-                    p_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-                    print(f"  Extracted from JS → {p_path}")
-
-    for url, body in data_files.items():
-        name = Path(urlparse(url).path).stem
-        suffix = Path(urlparse(url).path).suffix or ".bin"
-        saved = save(name, body, suffix, out)
-        if suffix == ".csv":
-            text = body.decode("utf-8", errors="replace")
-            lines = text.splitlines()
-            print(f"    {len(lines)} rows  |  header: {lines[0][:100]}")
-        elif suffix == ".json":
-            try:
-                obj = json.loads(body)
-                print(f"    JSON keys: {list(obj.keys())[:8] if isinstance(obj, dict) else f'array[{len(obj)}]'}")
-            except Exception:
-                pass
-
-    print(f"\nOutput: {out.resolve()}/")
-
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Extract data from White House Flourish map")
-    parser.add_argument(
-        "--browser",
-        action="store_true",
-        help="Use Playwright headless browser (handles JS-rendered pages and Cloudflare)",
-    )
-    args = parser.parse_args()
-
-    if args.browser:
-        run_browser()
-    else:
-        run_requests()
+    run_requests()
