@@ -1,0 +1,10 @@
+to do 
+
+1- get new data
+assess how bad the data is - implement the bag strategy with python counters 
+2. do second scrape but simulate some change 
+
+1. set up cron job 
+2. set up git ignore 
+3. set up api key on prod 
+4. how to test on prod

@@ -2,10 +2,8 @@
 Daily scrape + email diff.
 Run via cron: 0 7 * * * cd /path/to/Whscraper && uv run daily_check.py >> /var/log/whscraper.log 2>&1
 
-Required env vars:
-  SENDGRID_API_KEY   — your SendGrid API key
-  ALERT_EMAIL_TO     — recipient address
-  ALERT_EMAIL_FROM   — verified SendGrid sender address
+Required env var:
+  SENDGRID_API_KEY — your SendGrid API key
 """
 
 import os
@@ -18,18 +16,19 @@ from sendgrid.helpers.mail import Mail
 
 from app import DB_PATH, get_db, get_diff
 
+EMAIL_TO   = "stanleylee13@yahoo.com"
+EMAIL_FROM = "info@stanlee.info"
+
 
 def send_email(subject, body):
     api_key = os.environ.get("SENDGRID_API_KEY")
-    to_email = os.environ.get("ALERT_EMAIL_TO")
-    from_email = os.environ.get("ALERT_EMAIL_FROM")
 
-    if not all([api_key, to_email, from_email]):
-        print("Missing SENDGRID_API_KEY, ALERT_EMAIL_TO, or ALERT_EMAIL_FROM — skipping email")
+    if not api_key:
+        print("Missing SENDGRID_API_KEY — skipping email")
         return
 
     sg = sendgrid.SendGridAPIClient(api_key=api_key)
-    message = Mail(from_email=from_email, to_emails=to_email, subject=subject, plain_text_content=body)
+    message = Mail(from_email=EMAIL_FROM, to_emails=EMAIL_TO, subject=subject, plain_text_content=body)
     response = sg.send(message)
     print(f"Email sent: status {response.status_code}")
 
@@ -88,6 +87,10 @@ def main():
     subject = f"WH Arrests — changes detected ({latest_date} vs {prev_date})"
     body = build_email_body(latest_date, prev_date, changed, added, removed)
     send_email(subject, body)
+
+
+def test_email():
+    send_email("WH Arrests — test email", "This is a test email from daily_check.py.")
 
 
 if __name__ == "__main__":
