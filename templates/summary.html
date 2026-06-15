@@ -2,18 +2,24 @@
 {% block content %}
 <h1>WH Arrests — Summary</h1>
 
+{% if latest_date %}
+  <p style="color:#666; margin-bottom:1.5rem;">
+    Showing data from latest scrape: <strong>{{ latest_date }}</strong>
+  </p>
+{% endif %}
+
 <div style="display:flex; gap:1.5rem; margin-bottom:2rem; flex-wrap:wrap;">
   <div style="background:#fff; border-radius:8px; padding:1.5rem 2rem; min-width:160px; box-shadow:0 1px 4px rgba(0,0,0,.1);">
-    <div style="font-size:2.2rem; font-weight:700;">{{ scrape_count }}</div>
+    <div style="font-size:2.2rem; font-weight:700;">{{ snapshot_count }}</div>
     <div style="color:#666; margin-top:.25rem;">Scrapes run</div>
   </div>
   <div style="background:#fff; border-radius:8px; padding:1.5rem 2rem; min-width:160px; box-shadow:0 1px 4px rgba(0,0,0,.1);">
     <div style="font-size:2.2rem; font-weight:700;">{{ city_count }}</div>
-    <div style="color:#666; margin-top:.25rem;">Unique cities</div>
+    <div style="color:#666; margin-top:.25rem;">Cities (latest scrape)</div>
   </div>
   <div style="background:#fff; border-radius:8px; padding:1.5rem 2rem; min-width:160px; box-shadow:0 1px 4px rgba(0,0,0,.1);">
     <div style="font-size:2.2rem; font-weight:700;">{{ country_count }}</div>
-    <div style="color:#666; margin-top:.25rem;">Origin countries</div>
+    <div style="color:#666; margin-top:.25rem;">Origin countries (latest scrape)</div>
   </div>
 </div>
 
@@ -32,33 +38,35 @@
   </h2>
 
   <style>
-    .diff-table { border-collapse:collapse; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.1); margin-bottom:2rem; }
-    .diff-table th { background:#1a1a2e; color:#fff; padding:.6rem 1rem; text-align:left; white-space:nowrap; }
-    .diff-table td { padding:.55rem 1rem; border-top:1px solid #eee; }
+    .diff-table { border-collapse:collapse; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.1); margin-bottom:2rem; width:100%; }
+    .diff-table th { background:#1a1a2e; color:#fff; padding:.6rem 1rem; text-align:left; }
+    .diff-table td { padding:.55rem 1rem; border-top:1px solid #eee; vertical-align:top; }
     .diff-table td.num { text-align:right; }
-    .pos { color:#1a7a3c; font-weight:600; }
-    .neg { color:#b91c1c; font-weight:600; }
+    .old-val { color:#b91c1c; }
+    .new-val { color:#1a7a3c; font-weight:600; }
+    .field-name { color:#666; }
     .empty-note { color:#888; font-style:italic; margin-bottom:2rem; }
     .diff-section-title { font-size:1rem; font-weight:600; margin-bottom:.75rem; }
   </style>
 
-  {# --- Arrest count changes --- #}
-  <div class="diff-section-title">Arrest count changes ({{ changed|length }})</div>
+  {# --- Changed cities (field-level diffs, same content as the email) --- #}
+  <div class="diff-section-title">Changed cities ({{ changed|length }})</div>
   {% if changed %}
     <table class="diff-table">
-      <thead><tr>
-        <th>City</th><th>State</th>
-        <th>Previous</th><th>New</th><th>Δ</th>
-      </tr></thead>
+      <thead><tr><th style="width:30%;">City</th><th>What changed</th></tr></thead>
       <tbody>
-        {% for r in changed %}
+        {% for entry in changed %}
         <tr>
-          <td>{{ r["city"] }}</td>
-          <td>{{ r["state"] }}</td>
-          <td class="num">{{ r["prev_arrests"] }}</td>
-          <td class="num">{{ r["new_arrests"] }}</td>
-          <td class="num {% if r['diff'] > 0 %}pos{% else %}neg{% endif %}">
-            {{ "+" if r["diff"] > 0 else "" }}{{ r["diff"] }}
+          <td>{{ entry["name"] }}</td>
+          <td>
+            {% for field, pair in entry["diffs"].items() %}
+              <div>
+                <span class="field-name">{{ field_labels[field] }}:</span>
+                <span class="old-val">{{ pair[0] }}</span>
+                &rarr;
+                <span class="new-val">{{ pair[1] }}</span>
+              </div>
+            {% endfor %}
           </td>
         </tr>
         {% endfor %}
@@ -72,12 +80,11 @@
   <div class="diff-section-title">New cities ({{ added|length }})</div>
   {% if added %}
     <table class="diff-table">
-      <thead><tr><th>City</th><th>State</th><th>Arrests</th></tr></thead>
+      <thead><tr><th>City</th><th>Arrests</th></tr></thead>
       <tbody>
         {% for r in added %}
         <tr>
-          <td>{{ r["city"] }}</td>
-          <td>{{ r["state"] }}</td>
+          <td>{{ r["name"] }}</td>
           <td class="num">{{ r["arrests"] }}</td>
         </tr>
         {% endfor %}
@@ -91,12 +98,11 @@
   <div class="diff-section-title">Removed cities ({{ removed|length }})</div>
   {% if removed %}
     <table class="diff-table">
-      <thead><tr><th>City</th><th>State</th><th>Last arrests</th></tr></thead>
+      <thead><tr><th>City</th><th>Last arrests</th></tr></thead>
       <tbody>
         {% for r in removed %}
         <tr>
-          <td>{{ r["city"] }}</td>
-          <td>{{ r["state"] }}</td>
+          <td>{{ r["name"] }}</td>
           <td class="num">{{ r["arrests"] }}</td>
         </tr>
         {% endfor %}

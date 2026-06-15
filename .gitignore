@@ -25,3 +25,7 @@ env/
 # Playwright
 playwright-report/
 test-results/
+
+# Generated scrape data (regenerated on every run)
+flourish_data/*_flourish_data.json
+flourish_data/*.db

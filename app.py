@@ -5,6 +5,15 @@ from pathlib import Path
 
 from flask import Flask, redirect, render_template, request, url_for
 
+from diff_utils import (
+    FIELD_LABELS,
+    diff_snapshots,
+    list_snapshots,
+    load_events,
+    snapshot_date,
+    unique_countries,
+)
+
 app = Flask(__name__)
 
 DB_PATH = Path("flourish_data/wh_arrests.db")
@@ -16,74 +25,50 @@ def get_db():
     return conn
 
 
-def get_diff(conn):
-    """Compare the two most recent scrape dates. Returns (latest, prev, changed, added, removed)."""
-    dates = conn.execute(
-        "SELECT DISTINCT created_at FROM wh_arrests ORDER BY created_at DESC LIMIT 2"
-    ).fetchall()
-
-    if len(dates) < 2:
-        latest_date = dates[0]["created_at"] if dates else None
-        return latest_date, None, [], [], []
-
-    latest_date = dates[0]["created_at"]
-    prev_date   = dates[1]["created_at"]
-
-    changed = conn.execute("""
-        SELECT l.city, l.state, p.arrests AS prev_arrests, l.arrests AS new_arrests,
-               l.arrests - p.arrests AS diff
-        FROM wh_arrests l
-        JOIN wh_arrests p ON l.city = p.city AND l.state = p.state AND p.created_at = ?
-        WHERE l.created_at = ? AND l.arrests != p.arrests
-        ORDER BY ABS(l.arrests - p.arrests) DESC
-    """, (prev_date, latest_date)).fetchall()
-
-    added = conn.execute("""
-        SELECT city, state, arrests FROM wh_arrests WHERE created_at = ?
-        AND (city || '|' || state) NOT IN (
-            SELECT city || '|' || state FROM wh_arrests WHERE created_at = ?
-        )
-        ORDER BY city
-    """, (latest_date, prev_date)).fetchall()
-
-    removed = conn.execute("""
-        SELECT city, state, arrests FROM wh_arrests WHERE created_at = ?
-        AND (city || '|' || state) NOT IN (
-            SELECT city || '|' || state FROM wh_arrests WHERE created_at = ?
-        )
-        ORDER BY city
-    """, (prev_date, latest_date)).fetchall()
-
-    return latest_date, prev_date, changed, added, removed
-
-
 @app.route("/")
 def summary():
-    conn = get_db()
-    row = conn.execute(
-        "SELECT COUNT(DISTINCT created_at) AS scrape_count, COUNT(DISTINCT city) AS city_count FROM wh_arrests"
-    ).fetchone()
-    all_countries = conn.execute("SELECT origin_countries FROM wh_arrests").fetchall()
-    latest_date, prev_date, changed, added, removed = get_diff(conn)
-    conn.close()
+    snapshots = list_snapshots()
 
-    unique_countries = {
-        c.strip()
-        for r in all_countries
-        for c in (r["origin_countries"] or "").split(",")
-        if c.strip()
-    }
+    # No data scraped yet.
+    if not snapshots:
+        return render_template(
+            "summary.html",
+            snapshot_count=0,
+            latest_date=None,
+            prev_date=None,
+            city_count=0,
+            country_count=0,
+            changed=[], added=[], removed=[],
+            field_labels=FIELD_LABELS,
+        )
+
+    latest_file = snapshots[-1]
+    latest = load_events(latest_file)
+
+    # Stats reflect the LATEST snapshot only.
+    latest_date  = snapshot_date(latest_file)
+    city_count   = len(latest)
+    country_count = len(unique_countries(latest))
+
+    # Diff requires at least two snapshots.
+    changed, added, removed = [], [], []
+    prev_date = None
+    if len(snapshots) >= 2:
+        prev_file = snapshots[-2]
+        prev_date = snapshot_date(prev_file)
+        changed, added, removed = diff_snapshots(load_events(prev_file), latest)
 
     return render_template(
         "summary.html",
-        scrape_count=row["scrape_count"],
-        city_count=row["city_count"],
-        country_count=len(unique_countries),
+        snapshot_count=len(snapshots),
         latest_date=latest_date,
         prev_date=prev_date,
-        changed=changed or [],
-        added=added or [],
-        removed=removed or [],
+        city_count=city_count,
+        country_count=country_count,
+        changed=changed,
+        added=added,
+        removed=removed,
+        field_labels=FIELD_LABELS,
     )
 
 
